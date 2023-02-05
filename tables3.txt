@@ -1,0 +1,277 @@
+Tables*******
+
+
+CREATE TABLE IF NOT EXISTS train(
+	train_no INT NOT NULL,
+ 	date VARCHAR(100) NOT NULL DEFAULT 0,
+ 	ac_coaches INT NOT NULL CHECK(ac_coaches >= 0),
+ 	sl_coaches INT NOT NULL CHECK(sl_coaches >= 0),
+ 	ac_seats INT DEFAULT 0,
+	sl_seats INT DEFAULT 0,
+ 	PRIMARY KEY (train_no,date)
+	) 
+;
+
+ CREATE TABLE tickets(
+    	pnr text NOT NULL PRIMARY KEY,
+    	
+   	train_no INT NOT NULL,
+    	doj VARCHAR(100) NOT NULL,
+	coach_type VARCHAR(10) NOT NULL,
+	num_pass INT DEFAULT 0,
+    	
+	FOREIGN KEY(train_no,doj) REFERENCES train(train_no,date)
+);
+
+ CREATE TABLE passengers(
+    	
+    	name VARCHAR(100) NOT NULL,
+    	coachno INT NOT NULL,
+    	berthno INT NOT NULL,
+    	berthtype CHAR(2) NOT NULL,
+    	pnr text NOT NULL,
+    	
+    	FOREIGN KEY(pnr) REFERENCES tickets(pnr)
+);
+
+
+
+
+********
+NOT USED
+
+create or replace function update()
+returns trigger as $update$
+DECLARE 
+a INT;
+s INT;
+num_ac INT;
+num_sl INT;
+BEGIN
+       SELECT train.ac_seats into a FROM train WHERE train.train_no = new.tno AND train.date=new.d_oj;
+       SELECT train.sl_seats into s FROM train WHERE train.trainno = new.tno AND train.date=new.d_oj;
+       SELECT train.ac_coaches into num_ac FROM train WHERE train.train_no = new.tno AND train.date=new.d_oj;
+    	SELECT train.sl_coaches into num_sl FROM train WHERE train.train_no = new.tno AND train.date=new.d_oj;
+    	IF new.coach_type= 'AC' AND a+new.num_pass<=num_ac*18 THEN
+		UPDATE train SET train.ac_seats=train.ac_seats+new.n_pass WHERE train.train_no=new.tno and train.date=new.d_oj;
+	ELSEIF new.coach_type= 'SL' AND s+new.num_pass<=num_sl*24 THEN
+		UPDATE train SET train.sl_seats=train.sl_seats+new.n_pass WHERE train.train_no=new.tno and train.date=new.d_oj;
+    	END IF;
+      return new;
+end;
+$update$ language plpgsql;
+
+*********
+NOT USED
+
+Create TRIGGER before_new_ticket AFTER INSERT on tickets
+execute procedure update();
+
+********
+
+
+Create or replace function insertPass(IN ppnr VARCHAR(100),IN nname VARCHAR(100), IN coach INT, IN bno INT, IN btype CHAR(2))
+returns int
+as $$
+ BEGIN
+	INSERT INTO passengers(name,coachno,berthno,berthtype,pnr) VALUES(nname,coach,bno,btype,ppnr);
+ return 11;
+END;
+ $$language plpgsql;
+
+*******
+
+Create or replace function insertTicket(IN ppnr VARCHAR(100),IN tno INT,IN d_oj VARCHAR(100) ,IN ctype CHAR(2), IN n_pass INT)
+returns INTEGER as $$
+begin
+	INSERT INTO tickets(pnr,train_no,doj,coach_type,num_pass) VALUES(ppnr,tno,d_oj,ctype,n_pass);
+      return 11;
+end;
+
+$$ language plpgsql;
+
+*********
+
+Create or replace function release(IN tno INT,IN doj VARCHAR(100),IN num_ac INT, IN num_sl INT)
+returns INTEGER as $$
+begin
+	INSERT INTO train(train_no,date,ac_coaches,sl_coaches) VALUES(tno,doj,num_ac,num_sl);
+      return 11;
+end;
+
+$$ language plpgsql;
+
+*********
+
+
+
+************
+INSERT INTO train(train_no,date,ac_coaches,sl_coaches) VALUES(3472,'2023-07-13',100,200);
+INSERT INTO train(train_no,date,ac_coaches,sl_coaches) VALUES(3097,'2023-01-09',100,200);
+INSERT INTO train(train_no,date,ac_coaches,sl_coaches) VALUES(2591,'2023-11-25',100,200);
+INSERT INTO train(train_no,date,ac_coaches,sl_coaches) VALUES(6859,'2023-03-08',100,200);
+
+
+*******
+
+Create or replace function checkif(IN train__no INT,IN datee VARCHAR(100) ,IN ctype CHAR(2), IN n_pass INT)
+returns int as $$
+DECLARE 
+a INT;
+present INT;
+result INT :=-3;
+s INT;
+num_ac INT;
+num_sl INT;
+BEGIN
+	 PERFORM * FROM train WHERE train.train_no = train__no AND train.date=datee FOR UPDATE;
+       SELECT COUNT(*) into present   FROM train WHERE train.train_no =train__no AND train.date=datee;
+       SELECT train.ac_seats into a FROM train WHERE train.train_no =train__no AND train.date=datee;
+       SELECT train.sl_seats into s FROM train WHERE train.train_no =train__no AND train.date=datee;
+       SELECT train.ac_coaches into num_ac FROM train WHERE train.train_no = train__no AND train.date=datee;
+    	SELECT train.sl_coaches into num_sl FROM train WHERE train.train_no =train__no AND train.date=datee;
+	
+      IF present <> 1 THEN
+         result=-1;
+	return result;
+      END IF;
+    	IF ctype= 'AC' AND a+n_pass<=num_ac*18 THEN
+		UPDATE train SET ac_seats=a+n_pass  WHERE train_no=train__no and date=datee;
+            result=a;
+      END IF;
+           
+	IF ctype= 'SL' AND s+n_pass<=num_sl*24 THEN
+		UPDATE train SET sl_seats=s+n_pass  WHERE train_no=train__no and date=datee;
+            result=s;
+    	END IF;
+      return result;
+	
+
+end;
+
+$$language plpgsql;
+
+
+
+Create or replace function checkif(IN train__no INT,IN datee VARCHAR(100) ,IN ctype CHAR(2), IN n_pass INT, IN namearray text[] )
+returns text as $$
+DECLARE 
+ppnr  text:=' ';
+temp time;
+a INT;
+i INT :=1;
+present INT;
+result text :=' ';
+s INT;
+num_ac INT;
+num_sl INT;
+coach_no INT :=0;
+berth_no INT :=0;
+berth_ty char(2);
+BEGIN
+	
+       SELECT COUNT(*) into present   FROM train WHERE train.train_no =train__no AND train.date=datee;
+       SELECT train.ac_seats into a FROM train WHERE train.train_no =train__no AND train.date=datee;
+       SELECT train.sl_seats into s FROM train WHERE train.train_no =train__no AND train.date=datee;
+       SELECT train.ac_coaches into num_ac FROM train WHERE train.train_no = train__no AND train.date=datee;
+    	SELECT train.sl_coaches into num_sl FROM train WHERE train.train_no =train__no AND train.date=datee;
+	
+      IF present <> 1 THEN
+         result='-1';
+	return result;
+      END IF;
+    	IF ctype= 'AC' AND a+n_pass<=num_ac*18 THEN
+		UPDATE train SET ac_seats=a+n_pass  WHERE train_no=train__no and date=datee;
+       
+           
+     
+           
+	ELSIF ctype= 'SL' AND s+n_pass<=num_sl*24 THEN
+		UPDATE train SET sl_seats=s+n_pass  WHERE train_no=train__no and date=datee;
+       else 
+          return result;
+           
+    	END IF;
+      
+      temp =(select now());
+      ppnr =ppnr || temp;
+      result = result||' '|| ppnr || ' '||n_pass||' '||ctype;
+      INSERT INTO tickets(pnr,train_no,doj,coach_type,num_pass) VALUES(ppnr,train__no,datee,ctype,n_pass);
+
+      IF ctype='AC' THEN
+       while i<=n_pass loop
+      
+                                     coach_no := ((a + i - 1) / 18) + 1;
+                                     berth_no := ((a + i - 1) % 18) + 1;
+                                   
+                                    if berth_no % 6 = 1 OR berth_no % 6 = 2 
+                                    THEN
+                                        berth_ty := 'LB';
+                                     elsif berth_no % 6 = 3 OR berth_no % 6 = 4 
+                                        THEN
+                                        berth_ty := 'UB';
+                                     elsif berth_no % 6 = 5 
+                                    THEN      
+                                    berth_ty := 'SL';
+                                     else 
+                                        berth_ty := 'SU';
+                                      end if;
+            result = ''||result||''|| namearray[i]||' '|| coach_no||' '||berth_no||' '||berth_ty||' '   ;                    
+       INSERT INTO passengers(name,coachno,berthno,berthtype,pnr) VALUES(namearray[i],coach_no,berth_no,berth_ty,ppnr);
+
+      i:=i+1; 
+     
+
+       end loop;
+  else
+            while i<=n_pass loop
+      
+                                     coach_no := ((s + i - 1) / 24) + 1;
+                                     berth_no := ((s + i - 1) % 24 )+ 1;
+                                   
+                                    if berth_no % 8 = 1 OR berth_no % 8 = 4 
+                                    THEN
+                                        berth_ty := 'LB';
+                                     elsif berth_no % 8 = 2 OR berth_no % 8 = 5 
+                                        THEN
+                                        berth_ty := 'MB';
+                                     elsif berth_no % 8 = 3 OR berth_no % 8 = 6 
+                                        THEN
+                                        berth_ty := 'UB';
+                                     elsif berth_no % 8 = 7 
+                                    THEN      
+                                    berth_ty := 'SL';
+                                     else 
+                                        berth_ty := 'SU';
+                                      end if;
+            result = ' '||result||''|| namearray[i]||' '|| coach_no||' '||berth_no||' '||berth_ty||' '   ;                            
+       INSERT INTO passengers(name,coachno,berthno,berthtype,pnr) VALUES(namearray[i],coach_no,berth_no,berth_ty,ppnr);
+
+      i:=i+1; 
+     
+
+       end loop;
+   
+
+    END IF;
+      
+
+      
+      return result;
+	
+
+end;
+
+$$language plpgsql;
+
+
+
+
+
+select checkif(3472,'2023-07-13','SL',4,array['adddf','dswd','dddq','csww']);
+
+ PERFORM * FROM train WHERE train.train_no = train__no AND train.date=datee FOR UPDATE;
+
+ALTER DATABASE postgres SET DEFAULT_TRANSACTION_ISOLATION TO 'serializable'
+
+        
